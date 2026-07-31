@@ -1,0 +1,7 @@
+# Core
+requests>=2.32.0
+python-dotenv>=1.0.1
+yfinance>=0.2.54
+
+# Optional: nsepython can be flaky; yfinance covers .NS tickers for India universe
+# nsepython>=2.95
