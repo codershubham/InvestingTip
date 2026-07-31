@@ -1,9 +1,10 @@
-name: Weekly Value Investing Scan
+name: Manual Value Investing Scan
 
+# Manual-only runner for USA / India / both (no cron).
+# Scheduled runs live in:
+#   - weekly_india_scan.yml  (Sunday 8:00 PM IST)
+#   - weekly_usa_scan.yml    (Sunday 6:00 PM ET / 23:00 UTC)
 on:
-  schedule:
-    # Every Sunday 13:00 UTC ≈ Monday morning IST — runs both markets
-    - cron: "0 13 * * 0"
   workflow_dispatch:
     inputs:
       market:
@@ -45,7 +46,7 @@ jobs:
       - id: set
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.market }}" = "both" ]; then
+          if [ "${{ github.event.inputs.market }}" = "both" ]; then
             echo 'markets=["USA","India"]' >> "$GITHUB_OUTPUT"
           else
             M="${{ github.event.inputs.market }}"
@@ -55,71 +56,13 @@ jobs:
   value-scan:
     name: Scan ${{ matrix.market }}
     needs: resolve-markets
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         market: ${{ fromJSON(needs.resolve-markets.outputs.markets) }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Resolve run flags
-        id: flags
-        shell: bash
-        run: |
-          FORCE="${{ github.event.inputs.force_digest }}"
-          DRY="${{ github.event.inputs.dry_run }}"
-          echo "force_digest=${FORCE:-false}" >> "$GITHUB_OUTPUT"
-          echo "dry_run=${DRY:-false}" >> "$GITHUB_OUTPUT"
-
-      - name: Run weekly value scan (${{ matrix.market }})
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_MODELS: ${{ secrets.OPENROUTER_MODELS }}
-          OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          DIGEST_WHEN_EMPTY: ${{ steps.flags.outputs.force_digest }}
-          DRY_RUN: ${{ steps.flags.outputs.dry_run }}
-          MARKET: ${{ matrix.market }}
-          LOG_LEVEL: INFO
-          ARTIFACT_DIR: artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          ARGS=(--market "${{ matrix.market }}")
-          if [ "${{ steps.flags.outputs.force_digest }}" = "true" ]; then
-            ARGS+=(--force-digest)
-          fi
-          if [ "${{ steps.flags.outputs.dry_run }}" = "true" ]; then
-            ARGS+=(--dry-run)
-          fi
-          python main.py "${ARGS[@]}"
-
-      - name: Upload run artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: value-scan-${{ matrix.market }}-${{ github.run_id }}
-          path: artifacts/
-          if-no-files-found: ignore
-          retention-days: 30
+    uses: ./.github/workflows/value_scan_reusable.yml
+    secrets: inherit
+    with:
+      market: ${{ matrix.market }}
+      force_digest: ${{ github.event.inputs.force_digest || 'false' }}
+      dry_run: ${{ github.event.inputs.dry_run || 'false' }}

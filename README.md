@@ -8,6 +8,7 @@ Automated **long-term value investing** scanner that runs weekly on GitHub Actio
 
 ```
 Sunday cron (GitHub Actions)
+  India: 8:00 PM IST · USA: 6:00 PM ET
         │
         ▼
 ┌───────────────────┐
@@ -49,7 +50,10 @@ InvestingTip/
 ├── schemas/
 │   └── signal_schema.py
 ├── .github/workflows/
-│   └── weekly_value_scan.yml
+│   ├── value_scan_reusable.yml  # Shared scan job
+│   ├── weekly_india_scan.yml    # Sunday 8:00 PM IST
+│   ├── weekly_usa_scan.yml      # Sunday 6:00 PM ET
+│   └── weekly_value_scan.yml    # Manual USA/India/both
 ├── requirements.txt
 └── .env.example
 ```
@@ -103,8 +107,14 @@ Repo → **Settings → Secrets and variables → Actions**. Add at least:
 Optional secret: `OPENROUTER_MODELS` (comma-separated free model IDs).
 
 Workflow runs:
-- **Cron:** every Sunday `13:00 UTC`
-- **Manual:** Actions → *Weekly Value Investing Scan* → *Run workflow*
+
+| Workflow | When | Market |
+|---|---|---|
+| **Weekly India Value Scan** | Sunday **8:00 PM IST** (`30 14 * * 0` UTC) | India only |
+| **Weekly USA Value Scan** | Sunday **6:00 PM ET** (`0 23 * * 0` UTC; ≈7 PM during EDT) | USA only |
+| **Manual Value Investing Scan** | On demand | USA / India / both |
+
+Manual: Actions → pick a workflow → **Run workflow**.
 
 Artifacts under `artifacts/` are uploaded for each run.
 

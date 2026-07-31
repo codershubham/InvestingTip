@@ -5,7 +5,8 @@
 ```mermaid
 flowchart TB
     subgraph trigger [Trigger]
-        CRON["GitHub Actions<br/>Sunday 13:00 UTC"]
+        CRON_IN["India cron<br/>Sun 8:00 PM IST"]
+        CRON_US["USA cron<br/>Sun 6:00 PM ET"]
         MANUAL["Manual workflow_dispatch"]
     end
 
@@ -35,7 +36,8 @@ flowchart TB
         ART["artifacts/ JSON files"]
     end
 
-    CRON --> step1
+    CRON_IN --> step1
+    CRON_US --> step1
     MANUAL --> step1
     LLM1 --> step2
     FILTER --> step3
@@ -157,7 +159,14 @@ python main.py India
 
 The LLM can only pick sector keys from that market’s list; stocks come from the hard-coded map in `config/sector_universe.py`.
 
-Scheduled GitHub Actions runs **both** markets every Sunday. Manual runs let you pick `USA`, `India`, or `both`.
+Scheduled GitHub Actions:
+
+| Workflow | Local time | UTC cron | Market |
+|---|---|---|---|
+| `weekly_india_scan.yml` | Sunday 8:00 PM IST | `30 14 * * 0` | India |
+| `weekly_usa_scan.yml` | Sunday 6:00 PM ET | `0 23 * * 0` | USA |
+
+Manual runs (`weekly_value_scan.yml`) let you pick `USA`, `India`, or `both`.
 
 ---
 
@@ -215,4 +224,7 @@ So: **`--market India` uses India-localized news**; **`--market USA` uses US-loc
 | `email_notifier.py` | HTML + embedded JSON email |
 | `config/sector_universe.py` | Allowed sectors & tickers |
 | `llm/openrouter_client.py` | Free-model fallback |
-| `.github/workflows/weekly_value_scan.yml` | Sunday cron + manual run |
+| `.github/workflows/weekly_india_scan.yml` | India weekly cron (IST) |
+| `.github/workflows/weekly_usa_scan.yml` | USA weekly cron (ET) |
+| `.github/workflows/weekly_value_scan.yml` | Manual USA/India/both |
+| `.github/workflows/value_scan_reusable.yml` | Shared scan job |

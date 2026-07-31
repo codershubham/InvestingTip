@@ -1,0 +1,40 @@
+name: Weekly USA Value Scan
+
+# US market (NYSE/Nasdaq) weekly schedule — aimed at Eastern Time
+# GitHub cron is UTC-only; Eastern shifts with DST (EST=UTC-5, EDT=UTC-4).
+on:
+  schedule:
+    # Sunday 6:00 PM EST = 23:00 UTC  (≈ 7:00 PM EDT)
+    # After the week’s US cash session; email ready before Monday 9:30 AM ET open
+    - cron: "0 23 * * 0"
+  workflow_dispatch:
+    inputs:
+      force_digest:
+        description: "Email a digest even if no MoS alerts"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      dry_run:
+        description: "Run pipeline but skip sending email"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+jobs:
+  usa-scan:
+    name: USA (ET schedule)
+    uses: ./.github/workflows/value_scan_reusable.yml
+    secrets: inherit
+    with:
+      market: USA
+      force_digest: ${{ github.event.inputs.force_digest || 'false' }}
+      dry_run: ${{ github.event.inputs.dry_run || 'false' }}
