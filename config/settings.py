@@ -70,6 +70,12 @@ class Settings:
     min_roe: float = 15.0  # percent
     min_margin_of_safety_pct: float = 20.0  # only alert if MoS >= this
 
+    # Soft-guide entry timing (never changes ALERT → WATCHLIST)
+    entry_gap_pct: float = 2.0  # open vs prior close gap-down threshold
+    entry_falling_5d_pct: float = -8.0  # 5d return ≤ this → falling_knife
+    entry_falling_20d_pct: float = -15.0  # 20d return ≤ this → falling_knife
+    entry_caution_5d_pct: float = -4.0  # 5d return ≤ this → caution
+
     # Pipeline limits
     max_sectors: int = 2
     max_candidates_per_sector: int = 8
@@ -152,6 +158,10 @@ def get_settings() -> Settings:
         max_debt_to_equity=float(os.getenv("MAX_DEBT_TO_EQUITY", "0.5")),
         min_roe=float(os.getenv("MIN_ROE", "15.0")),
         min_margin_of_safety_pct=float(os.getenv("MIN_MARGIN_OF_SAFETY_PCT", "20.0")),
+        entry_gap_pct=float(os.getenv("ENTRY_GAP_PCT", "2.0")),
+        entry_falling_5d_pct=float(os.getenv("ENTRY_FALLING_5D_PCT", "-8.0")),
+        entry_falling_20d_pct=float(os.getenv("ENTRY_FALLING_20D_PCT", "-15.0")),
+        entry_caution_5d_pct=float(os.getenv("ENTRY_CAUTION_5D_PCT", "-4.0")),
         max_sectors=int(os.getenv("MAX_SECTORS", "2")),
         max_candidates_per_sector=int(os.getenv("MAX_CANDIDATES_PER_SECTOR", "8")),
         max_analyst_candidates=int(os.getenv("MAX_ANALYST_CANDIDATES", "5")),

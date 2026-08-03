@@ -25,11 +25,15 @@ Sunday cron (GitHub Actions)
 └─────────┬─────────┘
           ▼
 ┌───────────────────┐
-│  email_notifier   │  HTML memo + <script type="application/json"> signal
+│  entry_timing     │  Soft-guide buy zones (gap-down / drawdown) — never blocks ALERT
+└─────────┬─────────┘
+          ▼
+┌───────────────────┐
+│  email_notifier   │  HTML memo + entry plan + <script type="application/json"> signal
 └───────────────────┘
 ```
 
-Alert email is sent **only** when a stock clears screens and offers a strong margin of safety (default ≥ 20%), unless you enable digest mode.
+Alert email is sent **only** when a stock clears screens and offers a strong margin of safety (default ≥ 20%), unless you enable digest mode. Each ALERT includes mechanical **buy zones** (tranche 1–3 + invalidation) and a timing note when recent price action looks extended or gap-heavy.
 
 ## Project layout
 
@@ -39,6 +43,7 @@ InvestingTip/
 ├── macro_scanner.py
 ├── fundamental_screener.py
 ├── value_analyst.py
+├── entry_timing.py              # Soft-guide buy zones on ALERTs
 ├── email_notifier.py
 ├── config/
 │   ├── settings.py
@@ -127,6 +132,15 @@ Artifacts under `artifacts/` are uploaded for each run.
 | ROE | **&gt;** 15% |
 | Margin of Safety (ALERT) | **≥** 20%, moat ≥ 5, no severe red flags |
 
+ALERT emails also include a **soft entry plan** (does not change recommendation):
+
+| Timing | Meaning |
+|---|---|
+| Calm | Tranche 1 ≈ current price OK as first scale-in |
+| Caution / Falling knife | Prefer tranche 2–3; gap-down or steep drawdown detected |
+
+Optional env: `ENTRY_GAP_PCT`, `ENTRY_FALLING_5D_PCT`, `ENTRY_FALLING_20D_PCT`, `ENTRY_CAUTION_5D_PCT`.
+
 ## OpenRouter fallback
 
 Model selection is **ordered, not random**:
@@ -146,12 +160,12 @@ Override via env:
 
 Each email includes:
 
-1. Human-readable **Value Investment Memo** (sector thesis, moat, financials, risks)
+1. Human-readable **Value Investment Memo** (sector thesis, moat, financials, risks, suggested entry plan)
 2. Embedded:
 
 ```html
 <script type="application/json" id="value-signal">
-{ ... schema_version, macro, screened_candidates, analyses, alerts ... }
+{ ... schema_version 1.1.0, macro, screened_candidates, analyses, alerts (with entry_plan) ... }
 </script>
 ```
 

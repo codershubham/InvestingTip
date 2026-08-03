@@ -131,6 +131,8 @@ def analyze_candidate(
             "roe_pct": candidate.get("roe_pct"),
             "market_cap": candidate.get("market_cap"),
             "price_to_book": candidate.get("price_to_book"),
+            "fifty_two_week_low": candidate.get("fifty_two_week_low"),
+            "fifty_two_week_high": candidate.get("fifty_two_week_high"),
         },
     }
     logger.info(

@@ -18,7 +18,7 @@ from config.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 
 def build_signal_payload(
@@ -70,6 +70,54 @@ def build_signal_payload(
     }
 
 
+def _timing_label(status: str) -> str:
+    return {
+        "calm": "Calm",
+        "caution": "Caution",
+        "falling_knife": "Falling knife",
+        "unknown": "Unknown",
+    }.get(status, status.replace("_", " ").title())
+
+
+def _fmt_level(value: Any) -> str:
+    if value is None:
+        return "—"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return escape(str(value))
+
+
+def _entry_plan_html(plan: dict[str, Any] | None) -> str:
+    if not plan:
+        return ""
+    status = str(plan.get("timing_status") or "unknown")
+    note = escape(str(plan.get("timing_note") or ""))
+    t1_action = str(plan.get("tranche_1_action") or "buy")
+    t1 = plan.get("tranche_1")
+    if t1_action == "wait" or t1 is None:
+        t1_text = "Wait (skip chase at current price)"
+    else:
+        t1_text = _fmt_level(t1)
+
+    return f"""
+      <h3 style="margin:16px 0 6px 0;font-size:15px;color:#292524;">Suggested entry plan</h3>
+      <p style="margin:0 0 8px 0;color:#44403c;font-size:14px;">
+        <strong>Timing:</strong> {_timing_label(status)}
+      </p>
+      <p style="margin:0 0 10px 0;line-height:1.5;color:#57534e;font-size:13px;">{note}</p>
+      <ul style="margin:0 0 8px 0;padding-left:18px;color:#44403c;font-size:14px;line-height:1.55;">
+        <li><strong>Tranche 1:</strong> {t1_text}</li>
+        <li><strong>Tranche 2:</strong> {_fmt_level(plan.get("tranche_2"))}</li>
+        <li><strong>Tranche 3:</strong> {_fmt_level(plan.get("tranche_3"))}</li>
+        <li><strong>Invalidation:</strong> {_fmt_level(plan.get("invalidation"))}</li>
+      </ul>
+      <p style="margin:0;font-size:12px;color:#a8a29e;line-height:1.45;">
+        Value thesis unchanged; zones are mechanical scale-in guides, not advice.
+      </p>
+    """
+
+
 def _memo_section(alert: dict[str, Any]) -> str:
     ticker = escape(str(alert.get("ticker", "")))
     name = escape(str(alert.get("company_name", "")))
@@ -81,6 +129,7 @@ def _memo_section(alert: dict[str, Any]) -> str:
     risks = alert.get("key_risks") or []
     risk_html = "".join(f"<li>{escape(str(r))}</li>" for r in risks)
     memo = escape(str(alert.get("investment_memo", ""))).replace("\n", "<br/>")
+    entry_html = _entry_plan_html(alert.get("entry_plan"))
 
     return f"""
     <section style="margin:0 0 28px 0;padding:0 0 20px 0;border-bottom:1px solid #d6d3d1;">
@@ -93,6 +142,7 @@ def _memo_section(alert: dict[str, Any]) -> str:
         <strong>Price:</strong> {escape(str(px))} &nbsp;|&nbsp;
         <strong>Moat:</strong> {escape(str(moat.get('score', 'n/a')))}/10
       </p>
+      {entry_html}
       <h3 style="margin:16px 0 6px 0;font-size:15px;color:#292524;">Investment Memo</h3>
       <p style="margin:0;line-height:1.55;color:#1c1917;font-size:14px;">{memo}</p>
       <h3 style="margin:16px 0 6px 0;font-size:15px;color:#292524;">Moat</h3>
