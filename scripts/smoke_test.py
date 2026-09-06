@@ -153,6 +153,11 @@ def test_india_yahoo_metric_fallbacks() -> None:
 def main() -> None:
     obj = extract_json_object('Here:\n```json\n{"a": 1, "b": "x"}\n```\n')
     assert obj == {"a": 1, "b": "x"}
+    try:
+        extract_json_object("Here's a thinking process:\n1. Analyze the request.")
+        raise AssertionError("scratchpad text should not parse as JSON")
+    except ValueError:
+        pass
 
     macro = validate_macro_result(
         {

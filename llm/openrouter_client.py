@@ -69,19 +69,23 @@ class OpenRouterClient:
         temperature: float = 0.2,
         max_tokens: int = 4096,
         task: LlmTask = "default",
+        require_json: bool = False,
     ) -> tuple[str, str]:
         """
         Return (content, model_used).
 
         Model selection is deterministic:
           1. Use the ordered list for `task` (macro / analyst / default)
-          2. On 429 / 5xx / timeout / bad response, try the next model
-        It does NOT pick randomly.
+          2. On 429 / 5xx / timeout / bad response / invalid JSON (when
+             require_json=True), try the next model
+        It does NOT pick randomly. Each new request starts at the preferred
+        model for that task (not the leftover index from the previous stock).
         """
         models = self.models_for(task)
         errors: list[str] = []
         attempts = max(len(models) * self.settings.llm_max_retries, 1)
         last_model: str | None = None
+        self._task_indexes[task] = 0
 
         logger.info(
             "LLM task=%s trying models in order: %s",
@@ -163,6 +167,14 @@ class OpenRouterClient:
                 if not content or not str(content).strip():
                     raise KeyError("empty content")
                 used = data.get("model", model)
+                if require_json:
+                    try:
+                        extract_json_object(str(content))
+                    except ValueError:
+                        msg = f"{model}: response was not valid JSON; rotating"
+                        logger.warning(msg)
+                        errors.append(msg)
+                        continue
                 logger.info("OpenRouter success task=%s model=%s", task, used)
                 return str(content), str(used)
             except (KeyError, IndexError, TypeError, ValueError) as exc:
@@ -192,6 +204,7 @@ class OpenRouterClient:
             temperature=temperature,
             max_tokens=max_tokens,
             task=task,
+            require_json=True,
         )
         parsed = extract_json_object(content)
         return parsed, model
