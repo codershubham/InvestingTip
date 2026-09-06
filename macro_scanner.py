@@ -11,12 +11,13 @@ import yfinance as yf
 
 from config.sector_universe import (
     Market,
+    get_universe,
     market_label,
     normalize_market,
     resolve_sector_key,
 )
 from config.settings import Settings, get_settings
-from llm.openrouter_client import OpenRouterClient
+from llm.openrouter_client import OpenRouterClient, OpenRouterError
 from prompts import MACRO_USER_TEMPLATE, build_macro_system_prompt
 from schemas.signal_schema import validate_macro_result
 
@@ -183,6 +184,98 @@ def _normalize_sector_keys(
     return macro
 
 
+_STOPWORDS = frozenset(
+    {
+        "and",
+        "the",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "into",
+        "major",
+        "large",
+        "names",
+        "other",
+        "only",
+    }
+)
+
+_MARKET_DEFAULTS: dict[Market, tuple[str, ...]] = {
+    "usa": ("semiconductors", "healthcare_biotech"),
+    "india": ("india_infra_capgoods", "india_banks_nbfc"),
+}
+
+
+def _sector_tokens(sector_key: str, name: str, description: str) -> set[str]:
+    blob = f"{sector_key.replace('_', ' ')} {name} {description}".lower()
+    return {
+        tok.strip("&,./")
+        for tok in blob.replace("india ", "").split()
+        if len(tok) > 3 and tok not in _STOPWORDS
+    }
+
+
+def heuristic_select_sectors(
+    headlines: list[dict[str, str]],
+    market: Market,
+    *,
+    max_sectors: int = 2,
+) -> dict[str, Any]:
+    """Pick 1–2 sectors from headline keyword hits when OpenRouter is unavailable."""
+    universe = get_universe(market)
+    blob = " ".join(h.get("title", "") for h in headlines).lower()
+    scored: list[tuple[int, str]] = []
+    for key, meta in universe.items():
+        tokens = _sector_tokens(key, meta["name"], meta["description"])
+        score = sum(blob.count(tok) for tok in tokens)
+        scored.append((score, key))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+
+    picked: list[str] = [key for score, key in scored if score > 0][:max_sectors]
+    if len(picked) < max_sectors:
+        for fallback in _MARKET_DEFAULTS.get(market, ()):
+            if fallback not in picked and fallback in universe:
+                picked.append(fallback)
+            if len(picked) >= max_sectors:
+                break
+    if not picked:
+        picked = list(universe.keys())[:max_sectors]
+
+    selected = []
+    for key in picked[:max_sectors]:
+        meta = universe[key]
+        selected.append(
+            {
+                "sector_key": key,
+                "sector_name": meta["name"],
+                "thesis": (
+                    "Heuristic fallback (OpenRouter unavailable): sector ranked from "
+                    "recent headline keywords and the curated long-term universe. "
+                    f"{meta['description']}."
+                ),
+                "catalysts": ["Headline keyword match / structural default"],
+                "risks": [
+                    "Not an LLM macro call — refresh OPENROUTER_API_KEY for qualitative picks"
+                ],
+                "confidence": 0.35,
+            }
+        )
+
+    label = market_label(market)
+    return {
+        "horizon_months": 24,
+        "macro_summary": (
+            f"{label} heuristic sector screen used because OpenRouter authentication failed. "
+            "Sectors are ranked from RSS headline keywords against the curated universe; "
+            "replace OPENROUTER_API_KEY at https://openrouter.ai/keys to restore LLM analysis."
+        ),
+        "selected_sectors": selected,
+        "rejected_themes": [],
+    }
+
+
 def scan_macro_sectors(
     client: OpenRouterClient | None = None,
     settings: Settings | None = None,
@@ -216,15 +309,30 @@ def scan_macro_sectors(
         market_snapshot=market_snapshot,
     )
 
-    raw, model_used = client.chat_json(
-        system=system_prompt,
-        user=user_prompt,
-        temperature=0.2,
-        max_tokens=2500,
-        task="macro",
-    )
-    validated = validate_macro_result(raw)
-    normalized = _normalize_sector_keys(validated, market=m)
+    try:
+        raw, model_used = client.chat_json(
+            system=system_prompt,
+            user=user_prompt,
+            temperature=0.2,
+            max_tokens=2500,
+            task="macro",
+        )
+        validated = validate_macro_result(raw)
+        normalized = _normalize_sector_keys(validated, market=m)
+    except (OpenRouterError, ValueError) as exc:
+        auth_failed = isinstance(exc, OpenRouterError) and getattr(
+            exc, "auth_failed", False
+        )
+        logger.warning(
+            "LLM macro scan failed (%s); using heuristic sector fallback",
+            "auth" if auth_failed else exc,
+        )
+        raw = heuristic_select_sectors(
+            headlines, m, max_sectors=settings.max_sectors
+        )
+        validated = validate_macro_result(raw)
+        normalized = _normalize_sector_keys(validated, market=m)
+        model_used = "heuristic_fallback"
     normalized["market"] = m
     normalized["market_label"] = label
     normalized["_meta"] = {

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from typing import Any
 
 import yfinance as yf
@@ -40,27 +41,53 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
-def _debt_to_equity(info: dict[str, Any]) -> float | None:
-    """Prefer reported D/E; fall back to totalDebt / stockholdersEquity."""
-    de = _safe_float(info.get("debtToEquity"))
-    if de is not None:
-        # Yahoo often reports D/E as a percentage-like figure (e.g. 45.2 = 0.452).
-        return de / 100.0 if de > 5 else de
-
-    total_debt = _safe_float(info.get("totalDebt"))
+def _book_equity(info: dict[str, Any]) -> float | None:
+    """Stockholders' equity; Yahoo often omits it for NSE, so use book × shares."""
     equity = _safe_float(info.get("stockholdersEquity")) or _safe_float(
         info.get("totalStockholderEquity")
     )
-    if total_debt is not None and equity and equity > 0:
-        return total_debt / equity
+    if equity and equity > 0:
+        return equity
+    book_value = _safe_float(info.get("bookValue"))
+    shares = _safe_float(info.get("sharesOutstanding"))
+    if book_value and shares and book_value > 0 and shares > 0:
+        return book_value * shares
     return None
 
 
-def _roe_pct(info: dict[str, Any]) -> float | None:
-    roe = _safe_float(info.get("returnOnEquity"))
-    if roe is None:
+def _debt_to_equity(info: dict[str, Any]) -> float | None:
+    """Return D/E as a ratio (0.27 = 27%).
+
+    Yahoo `debtToEquity` is a percent for both US and NSE (1.87 = 1.87%,
+    27.4 = 27.4%). Treating values ≤ 5 as already-a-ratio incorrectly
+    rejected low-leverage India names (IRCTC, Siemens, Polycab, KEI).
+    Prefer totalDebt / book equity when Yahoo provides the parts.
+    """
+    total_debt = _safe_float(info.get("totalDebt"))
+    equity = _book_equity(info)
+    if equity is not None and equity <= 0:
         return None
-    return roe * 100.0 if abs(roe) <= 1.5 else roe
+    if total_debt is not None and equity:
+        return total_debt / equity
+
+    de = _safe_float(info.get("debtToEquity"))
+    if de is None:
+        return None
+    return de / 100.0
+
+
+def _roe_pct(info: dict[str, Any]) -> float | None:
+    """Return ROE in percent. Yahoo leaves returnOnEquity empty on many NSE names."""
+    roe = _safe_float(info.get("returnOnEquity"))
+    if roe is not None:
+        return roe * 100.0 if abs(roe) <= 1.5 else roe
+    net_income = _safe_float(info.get("netIncomeToCommon")) or _safe_float(
+        info.get("netIncome")
+    )
+    equity = _book_equity(info)
+    if net_income is None or not equity:
+        return None
+    return (net_income / equity) * 100.0
 
 
 def _trailing_pe(info: dict[str, Any]) -> float | None:
@@ -80,8 +107,12 @@ def fetch_fundamentals(ticker: str) -> dict[str, Any] | None:
     """Pull a defensive fundamentals snapshot for one ticker."""
     try:
         t = yf.Ticker(ticker)
+        info: dict[str, Any] = {}
         try:
-            info = t.info or {}
+            getter = getattr(t, "get_info", None)
+            raw = getter() if callable(getter) else t.info
+            if isinstance(raw, dict):
+                info = raw
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping %s (info fetch failed): %s", ticker, exc)
             return None
@@ -204,6 +235,7 @@ def screen_sector(
         row = fetch_fundamentals(ticker)
         if row:
             fetched.append(row)
+        time.sleep(0.12)
 
     sector_pe = _sector_avg_pe(fetched)
     passed: list[dict[str, Any]] = []
