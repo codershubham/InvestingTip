@@ -5,42 +5,57 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 
-load_dotenv()
+_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(_ENV_FILE)
 
 LlmTask = Literal["macro", "analyst", "default"]
 
-# OpenRouter free-tier models (Jul 2026 top free endpoints), ordered by preference.
+# OpenRouter free-tier models (Sep 2026 live :free endpoints), ordered by preference.
 # Shared fallback chain — used when task-specific lists are empty / exhausted.
+# Not random: each pipeline task starts at the head of its list, then walks
+# this shared chain on 429 / 5xx / timeout / empty / malformed JSON.
 DEFAULT_FREE_MODELS: tuple[str, ...] = (
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "inclusionai/ling-3.0-flash:free",
+    "minimax/minimax-m3:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
     "poolside/laguna-s-2.1:free",
-    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "inclusionai/ling-3.0-flash-fin:free",
+    "minimax/minimax-m2.7:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "poolside/laguna-xs-2.1:free",
-    "cohere/north-mini-code:free",
+    "z-ai/glm-5.2:free",
+    "openrouter/free",
 )
 
 # Macro sector pick: prefer fast / solid JSON instruction followers first.
 DEFAULT_MACRO_MODELS: tuple[str, ...] = (
-    "inclusionai/ling-3.0-flash:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "nvidia/nemotron-3-nano-30b-a3b:free",
-    "poolside/laguna-s-2.1:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "minimax/minimax-m3:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "poolside/laguna-xs-2.1:free",
+    "minimax/minimax-m2.7:free",
+    "inclusionai/ling-3.0-flash-fin:free",
 )
 
-# Value analyst: Super first (faster/reliable), Ultra as heavy fallback.
+# Value analyst: strongest free reasoners first, then finance-tuned / fast JSON.
 DEFAULT_ANALYST_MODELS: tuple[str, ...] = (
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "inclusionai/ling-3.0-flash:free",
     "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "minimax/minimax-m3:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
     "poolside/laguna-s-2.1:free",
-    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "inclusionai/ling-3.0-flash-fin:free",
+    "google/gemma-4-31b-it:free",
+    "z-ai/glm-5.2:free",
+    "nvidia/nemotron-3.5-lightning:free",
 )
 
 
@@ -69,6 +84,12 @@ class Settings:
     max_debt_to_equity: float = 0.5
     min_roe: float = 15.0  # percent
     min_margin_of_safety_pct: float = 20.0  # only alert if MoS >= this
+
+    # Soft-guide entry timing (never changes ALERT → WATCHLIST)
+    entry_gap_pct: float = 2.0  # open vs prior close gap-down threshold
+    entry_falling_5d_pct: float = -8.0  # 5d return ≤ this → falling_knife
+    entry_falling_20d_pct: float = -15.0  # 20d return ≤ this → falling_knife
+    entry_caution_5d_pct: float = -4.0  # 5d return ≤ this → caution
 
     # Pipeline limits
     max_sectors: int = 2
@@ -119,6 +140,13 @@ class Settings:
         return problems
 
 
+def _clean_secret(raw: str | None) -> str:
+    """Strip whitespace and wrapping quotes from env values."""
+    if not raw:
+        return ""
+    return raw.strip().strip('"').strip("'")
+
+
 def _parse_models(raw: str | None, fallback: tuple[str, ...]) -> tuple[str, ...]:
     if not raw or not raw.strip():
         return fallback
@@ -131,7 +159,7 @@ def get_settings() -> Settings:
     """Load settings once per process."""
     shared = _parse_models(os.getenv("OPENROUTER_MODELS"), DEFAULT_FREE_MODELS)
     return Settings(
-        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
+        openrouter_api_key=_clean_secret(os.getenv("OPENROUTER_API_KEY")),
         openrouter_base_url=os.getenv(
             "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
         ).rstrip("/"),
@@ -144,14 +172,18 @@ def get_settings() -> Settings:
         ),
         smtp_host=os.getenv("SMTP_HOST", "smtp.gmail.com"),
         smtp_port=int(os.getenv("SMTP_PORT", "587")),
-        smtp_user=os.getenv("SMTP_USER", "").strip(),
-        smtp_password=os.getenv("SMTP_PASSWORD", "").strip(),
-        email_from=os.getenv("EMAIL_FROM", "").strip(),
-        email_to=os.getenv("EMAIL_TO", "").strip(),
-        resend_api_key=os.getenv("RESEND_API_KEY", "").strip(),
+        smtp_user=_clean_secret(os.getenv("SMTP_USER")),
+        smtp_password=_clean_secret(os.getenv("SMTP_PASSWORD")),
+        email_from=_clean_secret(os.getenv("EMAIL_FROM")),
+        email_to=_clean_secret(os.getenv("EMAIL_TO")),
+        resend_api_key=_clean_secret(os.getenv("RESEND_API_KEY")),
         max_debt_to_equity=float(os.getenv("MAX_DEBT_TO_EQUITY", "0.5")),
         min_roe=float(os.getenv("MIN_ROE", "15.0")),
         min_margin_of_safety_pct=float(os.getenv("MIN_MARGIN_OF_SAFETY_PCT", "20.0")),
+        entry_gap_pct=float(os.getenv("ENTRY_GAP_PCT", "2.0")),
+        entry_falling_5d_pct=float(os.getenv("ENTRY_FALLING_5D_PCT", "-8.0")),
+        entry_falling_20d_pct=float(os.getenv("ENTRY_FALLING_20D_PCT", "-15.0")),
+        entry_caution_5d_pct=float(os.getenv("ENTRY_CAUTION_5D_PCT", "-4.0")),
         max_sectors=int(os.getenv("MAX_SECTORS", "2")),
         max_candidates_per_sector=int(os.getenv("MAX_CANDIDATES_PER_SECTOR", "8")),
         max_analyst_candidates=int(os.getenv("MAX_ANALYST_CANDIDATES", "5")),

@@ -79,7 +79,19 @@ def analyze_candidate(
             )
             analysis = validate_analysis_result(raw)
             break
-        except (OpenRouterError, ValueError, json.JSONDecodeError) as exc:
+        except OpenRouterError as exc:
+            if getattr(exc, "auth_failed", False):
+                raise
+            last_error = exc
+            logger.warning(
+                "Analyst attempt %d/%d failed for %s: %s",
+                attempt,
+                max_attempts,
+                ticker,
+                exc,
+            )
+            time.sleep(min(2 * attempt, 6))
+        except (ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             logger.warning(
                 "Analyst attempt %d/%d failed for %s: %s",
@@ -131,6 +143,8 @@ def analyze_candidate(
             "roe_pct": candidate.get("roe_pct"),
             "market_cap": candidate.get("market_cap"),
             "price_to_book": candidate.get("price_to_book"),
+            "fifty_two_week_low": candidate.get("fifty_two_week_low"),
+            "fifty_two_week_high": candidate.get("fifty_two_week_high"),
         },
     }
     logger.info(
@@ -160,7 +174,16 @@ def analyze_candidates(
     for i, candidate in enumerate(selected):
         if i > 0:
             time.sleep(1.5)  # ease free-tier rate limits between names
-        analysis = analyze_candidate(candidate, macro, client, settings)
+        try:
+            analysis = analyze_candidate(candidate, macro, client, settings)
+        except OpenRouterError as exc:
+            if getattr(exc, "auth_failed", False):
+                logger.warning(
+                    "Skipping remaining analyst calls - OpenRouter auth failed: %s",
+                    exc,
+                )
+                break
+            raise
         if analysis:
             results.append(analysis)
 

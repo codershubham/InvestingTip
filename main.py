@@ -6,7 +6,8 @@ Pipeline:
   1. macro_scanner      → 1–2 bullish sectors (LLM)
   2. fundamental_screener → hard P/E, D/E, ROE filters (pure Python)
   3. value_analyst      → moat / fair value / MoS (LLM)
-  4. email_notifier     → HTML memo + embedded JSON (only on strong MoS)
+  4. entry_timing       → soft-guide buy zones (never changes ALERT)
+  5. email_notifier     → HTML memo + embedded JSON (only on strong MoS)
 
 Usage:
   python main.py --market USA
@@ -30,6 +31,7 @@ from typing import Any
 from config.sector_universe import Market, market_label, normalize_market
 from config.settings import get_settings
 from email_notifier import send_alert_email
+from entry_timing import enrich_alerts_with_entry_plan
 from fundamental_screener import flatten_passed_candidates, screen_sectors
 from llm.openrouter_client import OpenRouterClient, OpenRouterError
 from macro_scanner import scan_macro_sectors
@@ -130,10 +132,19 @@ def run_pipeline(
                 settings=settings,
             )
             alerts = select_alerts(analyses, settings=settings)
+            alerts = enrich_alerts_with_entry_plan(
+                alerts,
+                settings=settings,
+                candidates=candidates,
+            )
             meta["steps"]["analyst"] = {
                 "status": "ok",
                 "analyzed": len(analyses),
                 "alerts": len(alerts),
+            }
+            meta["steps"]["entry_timing"] = {
+                "status": "ok",
+                "enriched": len(alerts),
             }
             _write_artifact(
                 artifact_dir / "analyses.json",

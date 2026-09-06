@@ -296,7 +296,8 @@ INDIA_SECTOR_UNIVERSE: dict[str, SectorUniverse] = {
         "name": "Auto & Ancillaries",
         "description": "OEMs and auto component manufacturers",
         "tickers": [
-            "TATAMOTORS.NS",
+            "TMPV.NS",
+            "TMCV.NS",
             "M&M.NS",
             "MARUTI.NS",
             "BAJAJ-AUTO.NS",

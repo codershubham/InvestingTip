@@ -18,7 +18,18 @@ _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
 
 
 class OpenRouterError(RuntimeError):
-    """Raised when all models / retries are exhausted."""
+    """Raised when all models / retries are exhausted, or auth fails."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        auth_failed: bool = False,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.auth_failed = auth_failed
+        self.status_code = status_code
 
 
 class OpenRouterClient:
@@ -123,6 +134,20 @@ class OpenRouterClient:
                 errors.append(msg)
                 time.sleep(min(2**attempt, 20))
                 continue
+
+            if response.status_code in (401, 402, 403):
+                body = response.text[:400]
+                hint = (
+                    "OpenRouter rejected the API key (expired, revoked, or invalid). "
+                    "Create a new key at https://openrouter.ai/keys and update "
+                    "OPENROUTER_API_KEY in .env - do not retry other models."
+                )
+                logger.error("%s: HTTP %s: %s", model, response.status_code, body)
+                raise OpenRouterError(
+                    f"{hint} Details: {body}",
+                    auth_failed=True,
+                    status_code=response.status_code,
+                )
 
             if response.status_code >= 400:
                 body = response.text[:400]

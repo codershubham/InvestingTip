@@ -31,8 +31,12 @@ flowchart TB
         LLM2 --> MOS
     end
 
+    subgraph step3b [3b. Entry soft guide]
+        ENTRY["entry_timing.py<br/>gap-down / drawdown → buy zones<br/>(never downgrades ALERT)"]
+    end
+
     subgraph step4 [4. Notify]
-        MAIL["Resend / SMTP HTML email<br/>memo + embedded JSON"]
+        MAIL["Resend / SMTP HTML email<br/>memo + buy zones + JSON"]
         ART["artifacts/ JSON files"]
     end
 
@@ -41,8 +45,9 @@ flowchart TB
     MANUAL --> step1
     LLM1 --> step2
     FILTER --> step3
-    MOS -->|ALERT only<br/>or --force-digest| MAIL
-    MOS --> ART
+    MOS --> ENTRY
+    ENTRY -->|ALERT + entry_plan<br/>or --force-digest| MAIL
+    ENTRY --> ART
 ```
 
 ## Step-by-step: what actually runs
@@ -92,12 +97,22 @@ flowchart TB
    - **WATCHLIST** — interesting but not cheap enough / more uncertainty
    - **PASS** — weak moat, flags, or no discount
 
+### Step 3b — Entry soft guide (`entry_timing.py`)
+**Goal:** Advise *where* to scale in without changing the ALERT recommendation.
+
+1. For each ALERT, fetches ~3 months of OHLC via yfinance.
+2. Detects gap-downs (open vs prior close ≥ configured %) and 5d/20d drawdowns.
+3. Labels timing as `calm` / `caution` / `falling_knife` (or `unknown` if history fails).
+4. Attaches mechanical buy zones: tranche_1 (current if calm, else wait), tranche_2 (~5% / 20d low), tranche_3 (deeper / near 52w low), plus an invalidation level.
+5. Recommendation stays **ALERT** — this is guidance only.
+
 ### Step 4 — Email (`email_notifier.py`)
 - **Default:** email only if there is at least one **ALERT**.
 - **Digest mode** (`--force-digest` / `DIGEST_WHEN_EMPTY=true`): email even with zero alerts.
 - Email contains:
   1. Human-readable investment memo
-  2. Embedded `<script type="application/json" id="value-signal">` for Phase 2 parsing
+  2. **Suggested entry plan** (timing + tranche prices) when `entry_plan` is present
+  3. Embedded `<script type="application/json" id="value-signal">` for Phase 2 parsing (`schema_version` 1.1.0+)
 - Artifacts are also written under `artifacts/` for debugging.
 
 ### OpenRouter fallback (`llm/openrouter_client.py`)
@@ -114,6 +129,7 @@ sequenceDiagram
     participant Macro as macro_scanner
     participant Screen as fundamental_screener
     participant Analyst as value_analyst
+    participant Entry as entry_timing
     participant Mail as email_notifier
     participant OR as OpenRouter
     participant YF as Yahoo Finance
@@ -132,6 +148,9 @@ sequenceDiagram
     Analyst->>OR: moat + fair value (JSON)
     OR-->>Analyst: analysis
     Analyst-->>Main: ALERT / WATCHLIST / PASS
+    Main->>Entry: enrich_alerts_with_entry_plan()
+    Entry->>YF: OHLC history for ALERTs
+    Entry-->>Main: entry_plan on each ALERT
     alt has ALERT or force digest
         Main->>Mail: send HTML + JSON signal
     else no alerts
@@ -207,7 +226,8 @@ So: **`--market India` uses India-localized news**; **`--market USA` uses US-loc
 ## What it deliberately ignores
 
 - Day trading / swing trading
-- Technical indicators (RSI, EMA, MACD, chart patterns)
+- Technical indicators as **selection** criteria (RSI, EMA, MACD, chart patterns) — ALERTs remain value/MoS driven
+- Using price action to **block** alerts (gap-downs only soft-guide the email buy zones)
 - Databases (Phase 1 emails JSON only; no Supabase yet)
 - Invented tickers outside `sector_universe.py`
 
@@ -221,6 +241,7 @@ So: **`--market India` uses India-localized news**; **`--market USA` uses US-loc
 | `macro_scanner.py` | News + indexes → sector thesis |
 | `fundamental_screener.py` | Hard P/E, D/E, ROE filters |
 | `value_analyst.py` | Moat, fair value, MoS |
+| `entry_timing.py` | Soft-guide buy zones on ALERTs |
 | `email_notifier.py` | HTML + embedded JSON email |
 | `config/sector_universe.py` | Allowed sectors & tickers |
 | `llm/openrouter_client.py` | Free-model fallback |
