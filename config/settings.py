@@ -35,14 +35,14 @@ DEFAULT_FREE_MODELS: tuple[str, ...] = (
     "openrouter/free",
 )
 
-# Macro sector pick: prefer fast / solid JSON instruction followers first.
+# Macro sector pick: prefer models that return JSON (not chain-of-thought scratchpads).
 DEFAULT_MACRO_MODELS: tuple[str, ...] = (
-    "nvidia/nemotron-3.5-lightning:free",
     "minimax/minimax-m3:free",
     "google/gemma-4-26b-a4b-it:free",
+    "minimax/minimax-m2.7:free",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "poolside/laguna-xs-2.1:free",
-    "minimax/minimax-m2.7:free",
+    "nvidia/nemotron-3.5-lightning:free",
     "inclusionai/ling-3.0-flash-fin:free",
 )
 

@@ -222,6 +222,7 @@ def heuristic_select_sectors(
     market: Market,
     *,
     max_sectors: int = 2,
+    reason: str = "llm_unavailable",
 ) -> dict[str, Any]:
     """Pick 1–2 sectors from headline keyword hits when OpenRouter is unavailable."""
     universe = get_universe(market)
@@ -243,6 +244,23 @@ def heuristic_select_sectors(
     if not picked:
         picked = list(universe.keys())[:max_sectors]
 
+    label = market_label(market)
+    if reason == "auth":
+        summary = (
+            f"{label} heuristic sector screen used because OpenRouter authentication failed. "
+            "Sectors are ranked from RSS headline keywords against the curated universe; "
+            "replace OPENROUTER_API_KEY at https://openrouter.ai/keys to restore LLM analysis."
+        )
+        thesis_prefix = "Heuristic fallback (OpenRouter unavailable)"
+        risk = "Not an LLM macro call — refresh OPENROUTER_API_KEY for qualitative picks"
+    else:
+        summary = (
+            f"{label} heuristic sector screen used because the LLM did not return usable JSON. "
+            "Sectors are ranked from RSS headline keywords against the curated universe."
+        )
+        thesis_prefix = "Heuristic fallback (LLM JSON unavailable)"
+        risk = "Not an LLM macro call — free-model JSON parse or validation failed"
+
     selected = []
     for key in picked[:max_sectors]:
         meta = universe[key]
@@ -251,26 +269,19 @@ def heuristic_select_sectors(
                 "sector_key": key,
                 "sector_name": meta["name"],
                 "thesis": (
-                    "Heuristic fallback (OpenRouter unavailable): sector ranked from "
+                    f"{thesis_prefix}: sector ranked from "
                     "recent headline keywords and the curated long-term universe. "
                     f"{meta['description']}."
                 ),
                 "catalysts": ["Headline keyword match / structural default"],
-                "risks": [
-                    "Not an LLM macro call — refresh OPENROUTER_API_KEY for qualitative picks"
-                ],
+                "risks": [risk],
                 "confidence": 0.35,
             }
         )
 
-    label = market_label(market)
     return {
         "horizon_months": 24,
-        "macro_summary": (
-            f"{label} heuristic sector screen used because OpenRouter authentication failed. "
-            "Sectors are ranked from RSS headline keywords against the curated universe; "
-            "replace OPENROUTER_API_KEY at https://openrouter.ai/keys to restore LLM analysis."
-        ),
+        "macro_summary": summary,
         "selected_sectors": selected,
         "rejected_themes": [],
     }
@@ -328,7 +339,10 @@ def scan_macro_sectors(
             "auth" if auth_failed else exc,
         )
         raw = heuristic_select_sectors(
-            headlines, m, max_sectors=settings.max_sectors
+            headlines,
+            m,
+            max_sectors=settings.max_sectors,
+            reason="auth" if auth_failed else "json",
         )
         validated = validate_macro_result(raw)
         normalized = _normalize_sector_keys(validated, market=m)

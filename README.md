@@ -147,7 +147,7 @@ Model selection is **ordered, not random**:
 
 | Task | Prefers first | Then falls back to |
 |---|---|---|
-| Macro sector pick | faster JSON models (Nemotron Lightning, MiniMax M3, Gemma 4 26B, …) | shared `OPENROUTER_MODELS` |
+| Macro sector pick | faster JSON models (MiniMax M3, Gemma 4 26B, …) | shared `OPENROUTER_MODELS` |
 | Value analyst | stronger reasoning (Nemotron Ultra, MiniMax M3, Super, Laguna S, …) | shared `OPENROUTER_MODELS` |
 
 On `429` / `5xx` / timeout / empty response, the client rotates to the **next** model in that list.

@@ -163,7 +163,7 @@ USA_SECTOR_UNIVERSE: dict[str, SectorUniverse] = {
             "PSX",
             "VLO",
             "OXY",
-            "HES",
+            "DVN",
             "WMB",
             "KMI",
         ],
